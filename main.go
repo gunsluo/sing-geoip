@@ -161,7 +161,7 @@ func write(writer *mmdbwriter.Tree, dataMap map[string][]*net.IPNet, output stri
 	return err
 }
 
-func release(source string, destination string, output string, ruleSetOutput string) error {
+func release(source string, destination string, output string, ruleSetOutput string, textOutput string) error {
 	sourceRelease, err := fetch(source)
 	if err != nil {
 		return err
@@ -212,6 +212,11 @@ func release(source string, destination string, output string, ruleSetOutput str
 	if err != nil {
 		return err
 	}
+	os.RemoveAll(textOutput)
+	err = os.MkdirAll(textOutput, 0o755)
+	if err != nil {
+		return err
+	}
 	for countryCode, ipNets := range countryMap {
 		var headlessRule option.DefaultHeadlessRule
 		headlessRule.IPCIDR = make([]string, 0, len(ipNets))
@@ -237,6 +242,13 @@ func release(source string, destination string, output string, ruleSetOutput str
 			return err
 		}
 		outputRuleSet.Close()
+
+		// plain CIDR list, converted to mihomo .mrs by the workflow
+		textPath := filepath.Join(textOutput, "geoip-"+countryCode+".txt")
+		err = os.WriteFile(textPath, []byte(strings.Join(headlessRule.IPCIDR, "\n")+"\n"), 0o644)
+		if err != nil {
+			return err
+		}
 	}
 
 	setActionOutput("tag", *sourceRelease.Name)
@@ -244,11 +256,25 @@ func release(source string, destination string, output string, ruleSetOutput str
 }
 
 func setActionOutput(name string, content string) {
-	os.Stdout.WriteString("::set-output name=" + name + "::" + content + "\n")
+	outputPath := os.Getenv("GITHUB_OUTPUT")
+	if outputPath == "" {
+		os.Stdout.WriteString("::set-output name=" + name + "::" + content + "\n")
+		return
+	}
+	file, err := os.OpenFile(outputPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer file.Close()
+	file.WriteString(name + "=" + content + "\n")
 }
 
 func main() {
-	err := release("Dreamacro/maxmind-geoip", "sagernet/sing-geoip", "geoip.db", "rule-set")
+	destination := os.Getenv("GITHUB_REPOSITORY")
+	if destination == "" {
+		destination = "gunsluo/sing-geoip"
+	}
+	err := release("Dreamacro/maxmind-geoip", destination, "geoip.db", "rule-set", "rule-set-text")
 	if err != nil {
 		log.Fatal(err)
 	}

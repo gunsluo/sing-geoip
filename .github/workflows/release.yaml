@@ -24,6 +24,17 @@ jobs:
         run: go run -v .
         env:
           FIXED_RELEASE: ${{ github.event.inputs.tag }}
+      - name: Convert rule sets to mrs
+        if: steps.build.outputs.skip != 'true'
+        env:
+          MIHOMO_VERSION: v1.19.33
+        run: |
+          curl -fsSL "https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_VERSION}/mihomo-linux-amd64-compatible-${MIHOMO_VERSION}.gz" | gunzip > mihomo
+          chmod +x mihomo
+          for f in rule-set-text/*.txt; do
+            ./mihomo convert-ruleset ipcidr text "$f" "rule-set/$(basename "$f" .txt).mrs"
+          done
+          ls rule-set/*.mrs | wc -l
       - name: Release rule sets
         if: steps.build.outputs.skip != 'true'
         run: .github/release-rule-set.sh
